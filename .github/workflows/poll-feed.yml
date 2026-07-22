@@ -1,0 +1,59 @@
+name: Poll Microsoft RSS for new builds
+
+# Every 6 hours, check the Microsoft SQL Server blog RSS feed for new build
+# releases, use an LLM to extract the details, and open a pull request with any
+# new builds for a human to review and merge. Never publishes unreviewed.
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Poll feed and extract new builds
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: python3 poll_feed.py
+
+      - name: Detect data changes
+        id: detect
+        run: |
+          if [ -n "$(git status --porcelain data)" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate, build, and verify the proposed change
+        if: steps.detect.outputs.changed == 'true'
+        run: |
+          python3 validate.py
+          python3 build.py
+          python3 test_snapshot.py
+
+      - name: Open pull request
+        if: steps.detect.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          add-paths: data
+          branch: bot/new-sql-builds
+          base: main
+          title: "New SQL Server build(s) from Microsoft RSS"
+          body-path: pr_body.md
+          commit-message: "Add new SQL Server build(s) from Microsoft RSS feed"
+          labels: automated, needs-review
+          delete-branch: true
