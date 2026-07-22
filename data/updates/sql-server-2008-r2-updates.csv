@@ -1,0 +1,8 @@
+Service Pack,Release Date,Build,Support Ends
+"<a href=""https://support.microsoft.com/en-us/topic/kb5021112-description-of-the-security-update-for-sql-server-2008-r2-sp3-gdr-february-14-2023-844419ed-d837-467f-97e8-eed2e281c40c"">GDR Download</a>",2023/02/16,10.50.6785.2,2019/07/09 - <b>out of support</b>
+"<a href=""https://support.microsoft.com/en-us/help/4057113/security-update-for-vulnerabilities-in-sql-server"">GDR (Meltdown/Spectre) Download</a>",2018/01/11,10.50.6560,2019/07/09 - <b>out of support</b>
+"Security Update - <a href=""https://www.microsoft.com/downloads/details.aspx?familyid=7af16cb8-c944-41cb-a897-c6fc373869cd"">Download</a> - <a href=""http://support.microsoft.com/kb/3045316"">Release Notes</a>",2015/07/14,&nbsp;,2019/07/09 - <b>out of support</b>
+"SP3 - <a href=""http://go.microsoft.com/fwlink/?LinkID=512818&amp;clcid=0x409"">Download</a> - <a href=""https://support.microsoft.com/kb/2979597"">Release Notes</a>",2014/09/30,10.50.6000,&nbsp;2019/07/09 - <b>out of support</b>
+"SP2 - <a href=""http://go.microsoft.com/fwlink/?LinkId=251790"">Download</a> - <a href=""https://support.microsoft.com/kb/2630458"">Release Notes</a>",2012/07/26,10.50.4000,2015/10/13 - <b>out of support</b>
+"SP1 - <a href=""http://go.microsoft.com/fwlink/?LinkId=214356"">Download</a> - <a href=""https://support.microsoft.com/kb/2528583"">Release Notes</a>",&nbsp;2011/07/11,10.50.2500,2013/10/08&nbsp;- <strong>out of support</strong>
+None (RTM),2010/07/20,10.50.1600,2012/07/10&nbsp;- <strong>out of support</strong>

@@ -1,0 +1,19 @@
+<p>Here's the release history for Microsoft SQL Server 2022. Each update is linked to its Microsoft knowledge base article with the download and the list of hotfixes included.</p>
+
+
+
+<p>Since SQL Server 2017, we only get Cumulative Updates and GDRs (security fixes), not Service Packs. That makes support end dates simple:</p>
+
+
+
+<ul class="wp-block-list">
+<li>Mainstream support ends 2028/01/11</li>
+
+
+
+<li>Extended support ends 2033/01/11</li>
+</ul>
+
+
+
+<p>Note that starting with CU13, there's a patching error for secondary replicas in an AG with databases that have replication, CDC, or SSISDB. For more information about that, read the <a href="https://learn.microsoft.com/en-us/troubleshoot/sql/releases/sqlserver-2022/cumulativeupdate15">CU15 release notes</a>.<strong> It's left up to you to enable a trace flag or remove databases from an AG before applying CU13 or newer.</strong></p>

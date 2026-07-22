@@ -1,0 +1,30 @@
+name: CI
+
+# Runs on every pull request and on pushes to main.
+# Validates the data, builds the site, and verifies the generated pages still
+# match the reference snapshots (so scrapers never break).
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Validate data files
+        run: python3 validate.py
+
+      - name: Build the site
+        run: python3 build.py
+
+      - name: Verify pages match reference (structure & data)
+        run: python3 test_snapshot.py

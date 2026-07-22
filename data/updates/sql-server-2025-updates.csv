@@ -1,0 +1,16 @@
+Cumulative Update,Release Date,Build
+"<a href=""https://learn.microsoft.com/troubleshoot/sql/releases/sqlserver-2025/cumulativeupdate6"">CU6</a>",2026/06/17,17.0.4055.5
+"<a href=""https://learn.microsoft.com/troubleshoot/sql/releases/sqlserver-2025/cumulativeupdate5"">CU5</a>",2026/05/20,17.0.4045.5
+"<a href=""https://support.microsoft.com/kb/5089899"">CU4 GDR</a>",2026/05/12,17.0.4040.1
+"<a href=""https://learn.microsoft.com/troubleshoot/sql/releases/sqlserver-2025/cumulativeupdate4"">CU4</a>",2026/04/16,17.0.4035.5
+"<a href=""https://support.microsoft.com/kb/5083245"">CU3 GDR</a>",2026/04/14,17.0.4030.1
+"<a href=""https://learn.microsoft.com/troubleshoot/sql/releases/sqlserver-2025/cumulativeupdate3"">CU3</a>",2026/03/12,17.0.4025.3
+"<a href=""https://support.microsoft.com/en-us/topic/kb5077466-description-of-the-security-update-for-sql-server-2025-cu2-march-10-2026-e09ecd69-b429-47e8-835c-3bcd107330e5"">CU2 GDR</a>",2026/03/10,17.0.4020.2
+"<a href=""https://learn.microsoft.com/troubleshoot/sql/releases/sqlserver-2025/cumulativeupdate2"">CU2</a>",2026/02/12,17.0.4015.4
+"<a href=""https://learn.microsoft.com/troubleshoot/sql/releases/sqlserver-2025/cumulativeupdate1"">CU1 v2</a>",2026/01/29,17.0.4006.2
+"<a href=""https://learn.microsoft.com/troubleshoot/sql/releases/sqlserver-2025/cumulativeupdate1"">CU1</a> (removed)",2026/01/15,17.0.4005.7
+"<a href=""https://info.microsoft.com/ww-landing-sql-server-2025.html"">RTM</a>",2025/11/18,17.0.1000.7
+"<a href=""https://info.microsoft.com/ww-landing-sql-server-2025.html"">RC 1</a>",2025/09/17,17.0.925.4
+"<a href=""https://info.microsoft.com/ww-landing-sql-server-2025.html"">RC 0</a>",2025/08/20,17.0.900.7
+"<a href=""https://info.microsoft.com/ww-landing-sql-server-2025.html"">CTP 2.1</a>",2025/06/17,17.0.800.3
+"<a href=""https://info.microsoft.com/ww-landing-sql-server-2025.html"">CTP 2.0</a>",2025/05/19,17.0.700.9

@@ -1,2 +1,7 @@
 /old-wordpress
 .DS_Store
+_site/
+__pycache__/
+*.pyc
+*.tar.gz
+_to_delete/

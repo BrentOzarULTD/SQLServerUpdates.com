@@ -1,0 +1,5 @@
+Depending on your agreements with Microsoft and where you're hosting your SQL Server, you may be able to get even longer support than what we show here.
+
+<a name="#note1"></a>Note 1: <a href="https://blogs.msdn.microsoft.com/sql_server_team/filestream-rsfx-driver-fails-to-load-after-installing-sql-server-2016-with-cu2-on-windows-server-2016-with-secureboot-on/">CU2 has a known issue with Filestream not working when SecureBoot is enabled.</a> If you're on Windows Server 2016 or Windows 10, and you're using SecureBoot (which is enabled by default with Hyper-V Gen2 VMs), and your database has Filestream, you either need to disable SecureBoot, or skip CU2 for now.
+
+<a name="#note2"></a>Note 2: columnstore index users should consider the <a href="https://support.microsoft.com/en-us/kb/3195813">on-demand hotfix update 13.0.2170.0</a>, which includes serious performance and reliability fixes.

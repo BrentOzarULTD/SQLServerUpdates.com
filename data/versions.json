@@ -1,0 +1,219 @@
+{
+  "site": {
+    "title": "SQLServerUpdates.com",
+    "description": "What SQL Server download should I get?",
+    "url": "https://sqlserverupdates.com"
+  },
+  "nav": [
+    {
+      "label": "Home",
+      "url": "/"
+    },
+    {
+      "label": "SQL Server 2025",
+      "url": "/sql-server-2025-updates/"
+    },
+    {
+      "label": "SQL Server 2022",
+      "url": "/sql-server-2022-updates/"
+    },
+    {
+      "label": "SQL Server 2019",
+      "url": "/sql-server-2019-updates/"
+    },
+    {
+      "label": "SQL Server 2017",
+      "url": "/sql-server-2017-updates/"
+    },
+    {
+      "label": "SQL Server 2016",
+      "url": "/sql-server-2016-updates/"
+    },
+    {
+      "label": "SQL Server 2014",
+      "url": "/sql-server-2014-updates/"
+    },
+    {
+      "label": "SQL Server 2012",
+      "url": "/sql-server-2012-updates/"
+    },
+    {
+      "label": "SQL Server 2008 R2",
+      "url": "/sql-server-2008-r2-updates/"
+    },
+    {
+      "label": "SQL Server 2008",
+      "url": "/sql-server-2008-updates/"
+    },
+    {
+      "label": "Download SQL Server",
+      "url": "/download-sql-server/"
+    },
+    {
+      "label": "Contact Us",
+      "url": "/contact-us/"
+    }
+  ],
+  "home_table": {
+    "header": [
+      "Version",
+      "Latest Update",
+      "Build Number",
+      "Support Ends",
+      "Other Updates"
+    ],
+    "rows": [
+      {
+        "version": "SSMS 22",
+        "latest_update": "<a href=\"https://learn.microsoft.com/ssms/install/install\">Download Most Recent</a>",
+        "build": "",
+        "support_ends": "",
+        "other_updates": "<a href=\"https://docs.microsoft.com/en-us/sql/ssms/release-notes-ssms?view=sql-server-2017#previous-ssms-releases\">SSMS 17 w/Debugger</a>"
+      },
+      {
+        "version": "SQL Server 2025",
+        "latest_update": "<a href=\"https://info.microsoft.com/ww-landing-sql-server-2025.html\">Download RTM</a> then <a href=\"https://learn.microsoft.com/troubleshoot/sql/releases/sqlserver-2025/cumulativeupdate6\">CU6</a>",
+        "build": "17.0.4055.5",
+        "support_ends": "2036/01/06",
+        "other_updates": "<a href=\"https://sqlserverupdates.com/sql-server-2025-updates/\">Other SQL 2025 Updates</a>"
+      },
+      {
+        "version": "SQL Server 2022",
+        "latest_update": "<a href=\"https://info.microsoft.com/ww-landing-sql-server-2022.html\">Download RTM</a> then <a href=\"https://learn.microsoft.com/troubleshoot/sql/releases/sqlserver-2022/cumulativeupdate25\">CU25</a>",
+        "build": "16.0.4255.1",
+        "support_ends": "2033/01/11",
+        "other_updates": "<a href=\"https://sqlserverupdates.com/sql-server-2022-updates/\">Other SQL 2022 Updates</a>"
+      },
+      {
+        "version": "SQL Server 2019",
+        "latest_update": "<a href=\"https://info.microsoft.com/ww-landing-sql-server-2019.html\">Download RTM</a>&nbsp;then <a href=\"https://learn.microsoft.com/en-us/troubleshoot/sql/releases/sqlserver-2019/cumulativeupdate32\">CU32</a> then <a href=\"https://support.microsoft.com/kb/5090407\">GDR</a>",
+        "build": "15.0.4470.1",
+        "support_ends": "2030/01/08",
+        "other_updates": "<a href=\"https://sqlserverupdates.com/sql-server-2019-updates/\">Other SQL 2019 Updates</a>"
+      },
+      {
+        "version": "SQL Server 2017",
+        "latest_update": "<a href=\"https://www.microsoft.com/en-us/evalcenter/evaluate-sql-server-2017-rtm\">Download RTM</a>&nbsp;then&nbsp;<a href=\"https://support.microsoft.com/en-us/topic/kb5016884-cumulative-update-31-for-sql-server-2017-6aa612d0-c97e-4c54-a41f-37f53777ba4c\">CU31</a> then <a href=\"https://support.microsoft.com/kb/5090354\">GDR</a>",
+        "build": "14.0.3530.2",
+        "support_ends": "2027/10/12",
+        "other_updates": "<a href=\"https://sqlserverupdates.com/sql-server-2017-updates/\">Other SQL 2017 Updates</a>"
+      },
+      {
+        "version": "SQL Server 2016",
+        "latest_update": "<a href=\"https://www.microsoft.com/en-us/download/details.aspx?id=103438\">Download RTM</a>&nbsp;then&nbsp;<a href=\"https://support.microsoft.com/en-us/topic/kb5003279-sql-server-2016-service-pack-3-release-information-46ab9543-5cf9-464d-bd63-796279591c31\">SP3</a>&nbsp;then <a href=\"https://support.microsoft.com/kb/5089271\">GDR</a>",
+        "build": "13.0.6490.1",
+        "support_ends": "2026/07/14",
+        "other_updates": "<a href=\"https://sqlserverupdates.com/sql-server-2016-updates/\">Other SQL 2016 Updates</a>"
+      },
+      {
+        "version": "SQL Server 2014",
+        "latest_update": "<a href=\"https://www.microsoft.com/en-us/download/details.aspx?id=57474\" target=\"_blank\" rel=\"noreferrer noopener\">Download SP3</a>&nbsp;then&nbsp;<a href=\"https://support.microsoft.com/en-us/help/4500181/cumulative-update-4-for-sql-server-2014-sp3\">CU4</a>&nbsp;then&nbsp;<a href=\"https://support.microsoft.com/en-us/topic/kb5029185-description-of-the-security-update-for-sql-server-2014-sp3-cu4-october-10-2023-ae8f270c-1ef2-440f-90d2-61ae67b39f41\">GDR</a>",
+        "build": "12.0.6449.1",
+        "support_ends": "2024/07/09",
+        "other_updates": "<a href=\"https://sqlserverupdates.com/sql-server-2014-updates/\">Other SQL 2014 Updates</a>"
+      },
+      {
+        "version": "SQL Server 2012",
+        "latest_update": "<a href=\"https://www.microsoft.com/en-us/download/details.aspx?id=56040\" target=\"_blank\" rel=\"noreferrer noopener\">Download SP4</a>&nbsp;then&nbsp;<a href=\"https://support.microsoft.com/en-us/topic/kb5021123-description-of-the-security-update-for-sql-server-2012-sp4-gdr-february-14-2023-74a1bd4d-63c0-41a5-8c9a-12e6b9f9ef43\">GDR</a>",
+        "build": "11.0.7512.11",
+        "support_ends": "2022/07/12",
+        "other_updates": "<a href=\"https://sqlserverupdates.com/sql-server-2012-updates/\">Other SQL 2012 Updates</a>"
+      },
+      {
+        "version": "SQL Server 2008 R2",
+        "latest_update": "<a href=\"http://www.microsoft.com/en-us/download/details.aspx?id=44271\" target=\"_blank\" rel=\"noreferrer noopener\">Download SP3</a>&nbsp;then&nbsp;<a href=\"https://support.microsoft.com/en-us/topic/kb5021112-description-of-the-security-update-for-sql-server-2008-r2-sp3-gdr-february-14-2023-844419ed-d837-467f-97e8-eed2e281c40c\">GDR</a>",
+        "build": "10.50.6785.2",
+        "support_ends": "2019/07/09",
+        "other_updates": "<a href=\"https://sqlserverupdates.com/sql-server-2008-r2-updates/\">Other SQL 2008R2 Updates</a>"
+      },
+      {
+        "version": "SQL Server 2008",
+        "latest_update": "<a href=\"http://www.microsoft.com/en-us/download/details.aspx?id=44278\" target=\"_blank\" rel=\"noreferrer noopener\">Download SP4</a>&nbsp;then&nbsp;<a href=\"https://support.microsoft.com/en-us/topic/kb5020863-description-of-the-security-update-for-sql-server-2008-sp4-gdr-february-14-2023-87e18005-0ed5-44fe-b369-b5bef7ae5e0c\">GDR</a>",
+        "build": "10.00.6814.4",
+        "support_ends": "2019/07/09",
+        "other_updates": "<a href=\"https://sqlserverupdates.com/sql-server-2008-updates/\">Other SQL 2008 Updates</a>"
+      },
+      {
+        "version": "SQL Server 2005",
+        "latest_update": "<a href=\"http://www.catalog.update.microsoft.com/search.aspx?q=kb2463332\" target=\"_blank\" rel=\"noreferrer noopener\">Download SP4&nbsp;</a>then&nbsp;<a href=\"https://www.microsoft.com/en-us/download/details.aspx?id=34846\">QFE</a>",
+        "build": "9.00.5324",
+        "support_ends": "2016/04/12",
+        "other_updates": ""
+      }
+    ]
+  },
+  "versions": [
+    {
+      "slug": "sql-server-2025-updates",
+      "label": "SQL Server 2025",
+      "menu": "SQL Server 2025",
+      "header_tag": "td"
+    },
+    {
+      "slug": "sql-server-2022-updates",
+      "label": "SQL Server 2022",
+      "menu": "SQL Server 2022",
+      "header_tag": "td"
+    },
+    {
+      "slug": "sql-server-2019-updates",
+      "label": "SQL Server 2019",
+      "menu": "SQL Server 2019",
+      "header_tag": "th"
+    },
+    {
+      "slug": "sql-server-2017-updates",
+      "label": "SQL Server 2017",
+      "menu": "SQL Server 2017",
+      "header_tag": "th"
+    },
+    {
+      "slug": "sql-server-2016-updates",
+      "label": "SQL Server 2016",
+      "menu": "SQL Server 2016",
+      "header_tag": "th"
+    },
+    {
+      "slug": "sql-server-2014-updates",
+      "label": "SQL Server 2014",
+      "menu": "SQL Server 2014",
+      "header_tag": "th"
+    },
+    {
+      "slug": "sql-server-2012-updates",
+      "label": "SQL Server 2012",
+      "menu": "SQL Server 2012",
+      "header_tag": "th"
+    },
+    {
+      "slug": "sql-server-2008-r2-updates",
+      "label": "SQL Server 2008 R2",
+      "menu": "SQL Server 2008 R2",
+      "header_tag": "th"
+    },
+    {
+      "slug": "sql-server-2008-updates",
+      "label": "SQL Server 2008",
+      "menu": "SQL Server 2008",
+      "header_tag": "th"
+    }
+  ],
+  "static_pages": [
+    {
+      "slug": "download-sql-server",
+      "title": "Get SQL Server and Management Studio"
+    },
+    {
+      "slug": "frequently-asked-questions",
+      "title": "Frequently Asked Questions"
+    },
+    {
+      "slug": "contact-us",
+      "title": "Contact Us"
+    },
+    {
+      "slug": "privacy-policy",
+      "title": "Privacy Policy"
+    }
+  ]
+}

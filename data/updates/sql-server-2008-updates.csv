@@ -1,0 +1,8 @@
+Service Pack,Release Date,Build,Support Ends
+"<a href=""https://support.microsoft.com/en-us/topic/kb5020863-description-of-the-security-update-for-sql-server-2008-sp4-gdr-february-14-2023-87e18005-0ed5-44fe-b369-b5bef7ae5e0c"">GDR</a>",2023/02/16,10.0.6814.4,2019/07/09 - <b>out of support</b>
+"Security Update - <a href=""http://support.microsoft.com/kb/3045311"">Download</a>",2015/07/14,,2019/07/09 - <b>out of support</b>
+"SP4 - <a href=""http://www.microsoft.com/en-us/download/details.aspx?id=44278"">Download</a> - <a href=""https://support.microsoft.com/en-us/kb/2979596"">Release Notes</a>",2014/09/30,10.00.6000,&nbsp;2019/07/09 - <b>out of support</b>
+"SP3 - <a href=""https://www.microsoft.com/en-us/download/details.aspx?displaylang=en&amp;id=27594"">Download</a> - <a href=""https://support.microsoft.com/en-us/kb/2546951/"">Release Notes</a>",2011/10/06,10.00.5500,2015/10/13 - <strong>out of support</strong>
+SP2,2010/09/24,10.00.4000,2012/10/09 - <strong>out of support</strong>
+SP1,2009/04/07,10.00.2531,2011/10/11- <strong>out of support</strong>
+None (RTM),&nbsp;2008/11/07,10.00.1600,2010/04/13- <strong>out of support</strong>
