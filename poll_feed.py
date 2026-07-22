@@ -21,6 +21,7 @@ Usage:
     python3 poll_feed.py --selftest # offline unit checks of the pure logic
 """
 import csv
+import gzip
 import json
 import os
 import re
@@ -184,9 +185,13 @@ def http_get(url, timeout=45):
         "User-Agent": UA,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "identity",
     })
     with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return resp.read().decode("utf-8", "replace")
+        data = resp.read()
+    if data[:2] == b"\x1f\x8b":            # gzip, even though we asked for identity
+        data = gzip.decompress(data)
+    return data.decode("utf-8", "replace")
 
 def fetch_first_ok(urls):
     """Fetch the first URL that responds; return (url, text) or (None, None)."""
@@ -242,6 +247,8 @@ def run():
     print(f"Feed items: {len(feed)}; candidates: {len(candidates)}")
 
     added = []
+    kb_ok = 0
+    llm_err = 0
     for it in candidates:
         kb_links = extract_kb_links(it["description"])
         if not kb_links:
@@ -253,10 +260,12 @@ def run():
         if not kb_text:
             print(f"  skip (KB fetch failed): {it['title']}")
             continue
+        kb_ok += 1
         try:
             r = llm_extract(api_key, it["title"], strip_html(it["description"], 2000),
                             kb_url, strip_html(kb_text), kb_links)
         except Exception as e:
+            llm_err += 1
             print(f"  skip (llm failed): {it['title']}: {e}")
             continue
         if not r.get("is_release"):
@@ -288,9 +297,18 @@ def run():
         lines.append("\n> The home-page \"Latest Update\" pointer in `data/versions.json` is "
                      "left unchanged; update it here if this is now the newest release.")
         Path(ROOT / "pr_body.md").write_text("\n".join(lines), encoding="utf-8")
-        print(f"\n{len(added)} build(s) added.")
+
+    print(f"\nSummary: candidates={len(candidates)} kb_fetched={kb_ok} "
+          f"llm_errors={llm_err} added={len(added)}")
+    if added:
+        print(f"{len(added)} build(s) added.")
+    elif kb_ok and llm_err == kb_ok:
+        print("ERROR: fetched the KB pages but EVERY LLM extraction failed. This is "
+              "almost always the OPENAI_API_KEY secret: invalid key, or the key's "
+              "project has no access to the model, or it is over its budget/rate limit.")
+        sys.exit(1)
     else:
-        print("\nNo new builds found.")
+        print("No new builds found.")
 
 
 # ------------------------------------------------------------------ selftest ---
