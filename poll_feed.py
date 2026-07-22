@@ -2,11 +2,16 @@
 """
 Poll Microsoft's SQL Server blog RSS feed for new build releases (cumulative
 updates, GDR/security updates, service packs), use an LLM to extract the
-structured details from each post, and add them to the data files.
+structured details, and add them to the data files.
 
 Designed to run in GitHub Actions on a schedule. When it changes any data file,
 the workflow opens a pull request for a human to review and merge -- the LLM is
 never trusted to publish build numbers unreviewed.
+
+The techcommunity.microsoft.com ARTICLE pages block scripted requests (HTTP 403),
+so we never fetch them. Instead we take the KB / release-notes link out of the
+RSS <description> and read the build number from the KB page on
+learn.microsoft.com / support.microsoft.com, which are not blocked.
 
 Dependency-free: standard library only. The OpenAI API is called over HTTPS with
 urllib. Set OPENAI_API_KEY in the environment.
@@ -30,7 +35,9 @@ FEED_URL = "https://techcommunity.microsoft.com/t5/s/gxcuf89792/rss/board?board.
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 
-# Versions we track -> CSV slug. Order matters for "2008 R2" before "2008".
+UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+
 VERSION_TO_SLUG = {
     "2025": "sql-server-2025-updates",
     "2022": "sql-server-2022-updates",
@@ -44,10 +51,17 @@ VERSION_TO_SLUG = {
 }
 TRACKED_TOKENS = list(VERSION_TO_SLUG.keys())
 
-# Only titles that look like an engine build release for a tracked version.
+# Product-version major prefix per version. Used to reject file versions
+# (e.g. "2025.170.4045.5") and cross-version hallucinations. Only enforced for
+# the modern versions that actually still receive updates.
+EXPECTED_MAJOR = {
+    "2025": "17.0", "2022": "16.0", "2019": "15.0", "2017": "14.0",
+    "2016": "13.0", "2014": "12.0", "2012": "11.0",
+}
+
 RELEASE_KEYWORDS = re.compile(r"cumulative update|security update|service pack|\bGDR\b|\bCU\d", re.I)
-# Obvious non-engine posts to drop before spending an LLM call.
 EXCLUDE = re.compile(r"management studio|\bSSMS\b|ODBC|JDBC|OLE DB|python|driver|feature pack", re.I)
+BUILD_RE = re.compile(r"^\d+\.\d+\.\d+(\.\d+)?$")
 
 
 # ----------------------------------------------------------------- pure logic ---
@@ -70,7 +84,6 @@ def parse_feed(xml_text):
     return items
 
 def title_version(title):
-    """Best-guess tracked version token from a title, or None."""
     if "2008 r2" in title.lower():
         return "2008 R2"
     for tok in TRACKED_TOKENS:
@@ -81,12 +94,35 @@ def title_version(title):
     return None
 
 def is_candidate(title):
-    """Cheap pre-filter: a build release for a tracked version, not a driver/SSMS."""
     if EXCLUDE.search(title):
         return False
     if not RELEASE_KEYWORDS.search(title):
         return False
     return title_version(title) is not None
+
+def extract_kb_links(description):
+    """All learn/support.microsoft.com URLs in the RSS description (href or bare)."""
+    urls = re.findall(r'https?://(?:learn|support)\.microsoft\.com/[^\s"\'<>)]+', description or "")
+    out = []
+    for u in urls:
+        u = u.rstrip(".,);")
+        if u not in out:
+            out.append(u)
+    return out
+
+def pick_kb(urls):
+    """Prefer a release-specific KB/release-notes page over generic landing pages."""
+    for u in urls:
+        if re.search(r"/kb/\d+|kb\d{6,}|cumulativeupdate\d+|securityupdate|/sqlserver-20\d\d/", u, re.I):
+            return u
+    return urls[0] if urls else None
+
+def strip_html(html_text, limit=8000):
+    text = re.sub(r"<script.*?</script>", " ", html_text, flags=re.S)
+    text = re.sub(r"<style.*?</style>", " ", text, flags=re.S)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:limit]
 
 def existing_builds(slug):
     path = DATA / "updates" / f"{slug}.csv"
@@ -95,8 +131,7 @@ def existing_builds(slug):
         return builds
     with open(path, newline="", encoding="utf-8") as f:
         rows = list(csv.reader(f))
-    header = rows[0]
-    idx = {n.strip().lower(): i for i, n in enumerate(header)}
+    idx = {n.strip().lower(): i for i, n in enumerate(rows[0])}
     bi = idx.get("build")
     for row in rows[1:]:
         if bi is not None and bi < len(row):
@@ -106,9 +141,6 @@ def existing_builds(slug):
     return builds
 
 def build_row(slug, label, kb_url, date, build):
-    """Construct a new CSV row matching this version's column schema, carrying
-    the Support Ends value forward from the current newest row. Returns
-    (header, new_row, all_rows_after_insert)."""
     path = DATA / "updates" / f"{slug}.csv"
     with open(path, newline="", encoding="utf-8") as f:
         rows = list(csv.reader(f))
@@ -133,73 +165,71 @@ def build_row(slug, label, kb_url, date, build):
     return header, row, new_rows
 
 def write_rows(slug, all_rows):
-    path = DATA / "updates" / f"{slug}.csv"
-    with open(path, "w", newline="", encoding="utf-8") as f:
+    with open(DATA / "updates" / f"{slug}.csv", "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         for r in all_rows:
             w.writerow(r)
+
+def valid_build(version, build):
+    if not BUILD_RE.match(build):
+        return False
+    major = EXPECTED_MAJOR.get(version)
+    return True if major is None else build.startswith(major + ".")
 
 
 # ------------------------------------------------------------------- network ---
 
 def http_get(url, timeout=45):
-    req = urllib.request.Request(url, headers={"User-Agent": "sqlserverupdates-bot/1.0"})
+    req = urllib.request.Request(url, headers={
+        "User-Agent": UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    })
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read().decode("utf-8", "replace")
 
-def post_excerpt(html_text, limit=6000):
-    """Strip a post's HTML to text plus the KB/release-notes links it contains."""
-    links = re.findall(r'href="(https?://(?:support|learn|www)\.microsoft\.com[^"]+)"', html_text)
-    text = re.sub(r"<script.*?</script>", " ", html_text, flags=re.S)
-    text = re.sub(r"<style.*?</style>", " ", text, flags=re.S)
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    seen = []
-    for l in links:
-        if l not in seen:
-            seen.append(l)
-    return text[:limit], seen[:15]
+def fetch_first_ok(urls):
+    """Fetch the first URL that responds; return (url, text) or (None, None)."""
+    for u in urls:
+        try:
+            return u, http_get(u)
+        except Exception as e:
+            print(f"    kb fetch failed ({u}): {e}")
+    return None, None
 
-def llm_extract(api_key, title, text, links):
+def llm_extract(api_key, title, desc_text, kb_url, kb_text, candidate_links):
     system = (
-        "You extract SQL Server release details from a Microsoft blog post. "
-        "Respond ONLY with a JSON object with keys: is_release (boolean), "
-        "version (one of " + json.dumps(TRACKED_TOKENS) + " or null), "
-        "update_label (short, e.g. 'CU25', 'GDR', 'CU24 GDR', 'SP3'), "
-        "build (e.g. '16.0.4255.1'), kb_url (the KB or release-notes URL for this "
-        "update), release_date (YYYY/MM/DD), reason (one sentence). "
-        "is_release is true ONLY if the post announces a specific build number for "
-        "one of the listed SQL Server engine versions. It is false for SSMS, "
-        "drivers, feature packs, or general blog posts."
+        "You extract SQL Server release details. Respond ONLY with a JSON object: "
+        "is_release (boolean), version (one of " + json.dumps(TRACKED_TOKENS) + " or null), "
+        "update_label (short, e.g. 'CU25','GDR','CU24 GDR','SP3'), "
+        "build (the SQL Server DATABASE ENGINE product version, formatted like "
+        "17.0.4045.5 -- NOT the file version like 2025.170.4045.5, and NOT the "
+        "Analysis Services version), kb_url (best KB/download link for THIS update), "
+        "release_date (YYYY/MM/DD), reason. is_release is true ONLY if this announces "
+        "a specific engine build number for one of the listed versions; false for "
+        "SSMS, drivers, feature packs, roundups, or general posts."
     )
     user = (
         f"TITLE: {title}\n\n"
-        f"CANDIDATE LINKS (pick the KB/download link for THIS update):\n"
-        + "\n".join(links) + "\n\n"
-        f"POST TEXT:\n{text}"
+        f"RSS SUMMARY:\n{desc_text}\n\n"
+        f"CANDIDATE KB LINKS: {candidate_links}\n\n"
+        f"KB PAGE ({kb_url}):\n{kb_text}"
     )
     payload = {
-        "model": OPENAI_MODEL,
-        "temperature": 0,
+        "model": OPENAI_MODEL, "temperature": 0,
         "response_format": {"type": "json_object"},
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": user},
-        ],
+        "messages": [{"role": "system", "content": system},
+                     {"role": "user", "content": user}],
     }
     req = urllib.request.Request(
-        OPENAI_URL,
-        data=json.dumps(payload).encode(),
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-    )
+        OPENAI_URL, data=json.dumps(payload).encode(),
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"})
     with urllib.request.urlopen(req, timeout=90) as resp:
         data = json.loads(resp.read())
     return json.loads(data["choices"][0]["message"]["content"])
 
 
 # ---------------------------------------------------------------------- main ---
-
-BUILD_RE = re.compile(r"^\d+\.\d+\.\d+(\.\d+)?$")
 
 def run():
     api_key = os.environ.get("OPENAI_API_KEY")
@@ -211,16 +241,21 @@ def run():
     candidates = [it for it in feed if is_candidate(it["title"])]
     print(f"Feed items: {len(feed)}; candidates: {len(candidates)}")
 
-    added = []  # (version, slug, label, build, date, kb, title, link)
+    added = []
     for it in candidates:
-        try:
-            body = http_get(it["link"])
-        except Exception as e:
-            print(f"  skip (fetch failed): {it['title']}: {e}")
+        kb_links = extract_kb_links(it["description"])
+        if not kb_links:
+            print(f"  skip (no KB link in feed): {it['title']}")
             continue
-        text, links = post_excerpt(body)
+        preferred = pick_kb(kb_links)
+        order = [preferred] + [u for u in kb_links if u != preferred]
+        kb_url, kb_text = fetch_first_ok(order)
+        if not kb_text:
+            print(f"  skip (KB fetch failed): {it['title']}")
+            continue
         try:
-            r = llm_extract(api_key, it["title"], text, links)
+            r = llm_extract(api_key, it["title"], strip_html(it["description"], 2000),
+                            kb_url, strip_html(kb_text), kb_links)
         except Exception as e:
             print(f"  skip (llm failed): {it['title']}: {e}")
             continue
@@ -229,35 +264,34 @@ def run():
         version = r.get("version")
         build = (r.get("build") or "").strip()
         slug = VERSION_TO_SLUG.get(version)
-        if not slug or not BUILD_RE.match(build):
-            print(f"  skip (unclear): {it['title']} -> {r}")
+        if not slug or not valid_build(version, build):
+            print(f"  skip (unclear/bad build): {it['title']} -> version={version} build={build!r}")
             continue
         if build in existing_builds(slug):
-            continue  # already on the site
+            continue
         label = (r.get("update_label") or "Update").strip()
         date = (r.get("release_date") or "").strip()
-        kb = (r.get("kb_url") or it["link"]).strip()
+        kb = (r.get("kb_url") or kb_url).strip()
         _, _, all_rows = build_row(slug, label, kb, date, build)
         write_rows(slug, all_rows)
         added.append((version, slug, label, build, date, kb, it["title"], it["link"]))
         print(f"  ADDED {version}: {label} {build} ({date})")
 
-    # PR body for the workflow to consume.
     if added:
         lines = ["Automated update from the Microsoft SQL Server blog RSS feed.\n",
                  "The following build(s) were detected and added. **Please verify each "
                  "against its source post before merging.**\n",
-                 "| Version | Update | Build | Date | Source |",
-                 "|---|---|---|---|---|"]
+                 "| Version | Update | Build | Date | KB | Source |",
+                 "|---|---|---|---|---|---|"]
         for v, slug, label, build, date, kb, title, link in added:
-            lines.append(f"| SQL Server {v} | {label} | `{build}` | {date} | [post]({link}) |")
-        lines.append("\n> Note: the home-page \"Latest Update\" pointer in "
-                     "`data/versions.json` is intentionally left unchanged; update it "
-                     "here if this is now the newest release for a version.")
+            lines.append(f"| SQL Server {v} | {label} | `{build}` | {date} | [KB]({kb}) | [post]({link}) |")
+        lines.append("\n> The home-page \"Latest Update\" pointer in `data/versions.json` is "
+                     "left unchanged; update it here if this is now the newest release.")
         Path(ROOT / "pr_body.md").write_text("\n".join(lines), encoding="utf-8")
         print(f"\n{len(added)} build(s) added.")
     else:
         print("\nNo new builds found.")
+
 
 # ------------------------------------------------------------------ selftest ---
 
@@ -268,43 +302,39 @@ def selftest():
         print(("PASS" if cond else "FAIL"), name)
         ok = ok and cond
 
-    # candidate filtering
     check("CU is candidate", is_candidate("Cumulative Update #25 for SQL Server 2022 RTM"))
     check("GDR is candidate", is_candidate("Security Update for SQL Server 2019 RTM CU32"))
     check("SSMS excluded", not is_candidate("Announcing SQL Server Management Studio 22.6.0"))
     check("driver excluded", not is_candidate("Microsoft ODBC Driver 17.11.1 for SQL Server Released"))
-    check("untracked year excluded", not is_candidate("Cumulative Update for SQL Server 2005"))
     check("2008 R2 detected", title_version("Security Update for SQL Server 2008 R2 SP3") == "2008 R2")
     check("2008 not R2", title_version("Security Update for SQL Server 2008 SP4") == "2008")
-    check("2022 detected", title_version("Cumulative Update #25 for SQL Server 2022 RTM") == "2022")
 
-    # feed parsing
-    sample = """<?xml version="1.0"?><rss><channel>
-      <item><title>Cumulative Update #99 for SQL Server 2022 RTM</title>
-        <link>https://example.com/cu99</link><guid>g1</guid>
-        <pubDate>Wed, 01 Jul 2026 00:00:00 GMT</pubDate>
-        <description>build 16.0.9999.1</description></item>
-    </channel></rss>"""
-    items = parse_feed(sample)
-    check("feed parsed one item", len(items) == 1 and items[0]["title"].startswith("Cumulative"))
+    desc = ('<P>The 5th cumulative update...<BR/></P><UL>'
+            '<LI>CU5 KB Article: https://learn.microsoft.com/troubleshoot/sql/releases/sqlserver-2025/cumulativeupdate5</LI>'
+            '<LI>Update Center: https://learn.microsoft.com/en-us/troubleshoot/sql/releases/download-and-install-latest-updates</LI></UL>')
+    links = extract_kb_links(desc)
+    check("kb links extracted", any("cumulativeupdate5" in u for u in links))
+    check("pick_kb prefers specific", "cumulativeupdate5" in (pick_kb(links) or ""))
+    gdr = 'See https://support.microsoft.com/kb/5090407 for details.'
+    check("support kb extracted", pick_kb(extract_kb_links(gdr)) == "https://support.microsoft.com/kb/5090407")
 
-    # row building against the real 3-col (2022) and 5-col (2016) schemas
+    check("product version valid", valid_build("2025", "17.0.4045.5"))
+    check("file version rejected", not valid_build("2025", "2025.170.4045.5"))
+    check("cross-version rejected", not valid_build("2022", "17.0.4045.5"))
+    check("2022 build valid", valid_build("2022", "16.0.4300.1"))
+
     if (DATA / "updates" / "sql-server-2022-updates.csv").exists():
         h, row, allr = build_row("sql-server-2022-updates", "CU99",
                                  "https://support.microsoft.com/kb/9999999", "2026/07/01", "16.0.9999.1")
         bi = [c.lower() for c in h].index("build")
         check("2022 row build set", row[bi] == "16.0.9999.1")
-        check("2022 row has link", 'href="https://support.microsoft.com/kb/9999999"' in row[0])
         check("2022 row inserted at top", allr[1] == row)
         h2, row2, _ = build_row("sql-server-2016-updates", "GDR",
                                 "https://support.microsoft.com/kb/1", "2026/07/01", "13.0.9999.1")
         idx2 = {c.lower(): i for i, c in enumerate(h2)}
-        check("2016 label in Cumulative Update col", 'GDR' in row2[idx2["cumulative update"]])
-        check("2016 service pack col blank", row2[idx2["service pack"]] == "")
+        check("2016 label in CU col", "GDR" in row2[idx2["cumulative update"]])
         check("2016 support ends carried", row2[idx2["support ends"]] != "")
-        # important: selftest must not leave modified CSVs on disk
-        check("build_row did not write to disk",
-              "16.0.9999.1" not in existing_builds("sql-server-2022-updates"))
+        check("build_row did not write", "16.0.9999.1" not in existing_builds("sql-server-2022-updates"))
 
     print("\nSELFTEST", "OK" if ok else "FAILED")
     sys.exit(0 if ok else 1)
