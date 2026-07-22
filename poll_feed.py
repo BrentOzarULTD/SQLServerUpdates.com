@@ -29,14 +29,17 @@ import re
 import sys
 import urllib.request
 import xml.etree.ElementTree as ET
+from datetime import timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).parent
 DATA = ROOT / "data"
 FEED_URL = "https://techcommunity.microsoft.com/t5/s/gxcuf89792/rss/board?board.id=SQLServer"
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+SITE_TIMEZONE = ZoneInfo("America/Los_Angeles")
 
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
@@ -87,11 +90,14 @@ def parse_feed(xml_text):
     return items
 
 def normalize_feed_date(value):
-    """Convert an RSS RFC 2822 publication timestamp to YYYY/MM/DD."""
+    """Convert an RSS timestamp to the site's Pacific calendar date."""
     if not value:
         return ""
     try:
-        return parsedate_to_datetime(value).date().strftime("%Y/%m/%d")
+        parsed = parsedate_to_datetime(value)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(SITE_TIMEZONE).date().strftime("%Y/%m/%d")
     except (TypeError, ValueError, OverflowError):
         return ""
 
@@ -109,6 +115,13 @@ def build_key(build):
         return tuple(int(part) for part in build.split("."))
     except (AttributeError, ValueError):
         return ()
+
+def normalize_update_label(title, label):
+    """Security updates on a CU branch must be labeled as GDR updates."""
+    label = (label or "Update").strip()
+    if "security update" in title.lower() and "GDR" not in label.upper():
+        return f"{label} + GDR"
+    return label
 
 def replace_last_link(value, url, label):
     """Preserve the install path on the home page and replace its last update."""
@@ -330,12 +343,15 @@ def run():
             continue
         if build in existing_builds(slug):
             continue
-        label = (r.get("update_label") or "Update").strip()
+        label = normalize_update_label(it["title"], r.get("update_label"))
         llm_date = (r.get("release_date") or "").strip()
         date = choose_release_date(rss_date, llm_date)
         if rss_date and llm_date and rss_date != llm_date:
             print(f"    date mismatch: model={llm_date}, using RSS={rss_date}")
-        kb = (r.get("kb_url") or kb_url).strip()
+        # The fetched URL came from the RSS item and is already constrained to
+        # Microsoft's support/learn domains. Do not let the model replace it
+        # with a download binary or an unrelated link found on the page.
+        kb = kb_url.strip()
         _, _, all_rows = build_row(slug, label, kb, date, build)
         write_rows(slug, all_rows)
         added.append((version, slug, label, build, date, kb, it["title"], it["link"]))
@@ -410,6 +426,8 @@ def selftest():
     check("2022 build valid", valid_build("2022", "16.0.4300.1"))
     check("RSS date normalized",
           normalize_feed_date("Thu, 16 Jul 2026 17:30:00 +0000") == "2026/07/16")
+    check("RSS midnight converted to Pacific date",
+          normalize_feed_date("Fri, 17 Jul 2026 00:30:00 +0000") == "2026/07/16")
     check("invalid RSS date rejected", normalize_feed_date("not a date") == "")
     check("RSS date overrides model date",
           choose_release_date("2026/07/16", "2023/07/14") == "2026/07/16")
@@ -417,6 +435,10 @@ def selftest():
     ordered = oldest_first([{"date": "Thu, 16 Jul 2026 00:00:00 +0000", "id": "new"},
                             {"date": "Tue, 14 Jul 2026 00:00:00 +0000", "id": "old"}])
     check("feed processed oldest first", [item["id"] for item in ordered] == ["old", "new"])
+    check("security CU label includes GDR",
+          normalize_update_label("Security Update for SQL Server 2017 RTM CU31", "CU31") == "CU31 + GDR")
+    check("plain CU label unchanged",
+          normalize_update_label("Cumulative Update 7 for SQL Server 2025", "CU7") == "CU7")
     home = {"home_table": {"rows": [{
         "version": "SQL Server 2025",
         "latest_update": '<a href="download">Download RTM</a> then <a href="cu6">CU6</a>',
