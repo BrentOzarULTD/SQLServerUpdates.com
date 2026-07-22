@@ -29,7 +29,7 @@ import re
 import sys
 import urllib.request
 import xml.etree.ElementTree as ET
-from datetime import timezone
+from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -122,6 +122,34 @@ def normalize_update_label(title, label):
     if "security update" in title.lower() and "GDR" not in label.upper():
         return f"{label} + GDR"
     return label
+
+def table_release_metadata(page_html, build):
+    """Find a build's specific KB URL and date in Microsoft's update table."""
+    for tr in re.findall(r"<tr\b[^>]*>(.*?)</tr>", page_html or "", re.S | re.I):
+        cells = re.findall(r"<td\b[^>]*>(.*?)</td>", tr, re.S | re.I)
+        if not cells:
+            continue
+        first = html.unescape(re.sub(r"<[^>]+>", "", cells[0])).strip()
+        if first != build:
+            continue
+        kb = ""
+        for url in re.findall(r'href="([^"]+)"', tr, re.I):
+            if re.match(r"https://support\.microsoft\.com/(?:help|kb)/\d+$", url, re.I):
+                kb = html.unescape(url)
+                break
+        date = ""
+        for cell in reversed(cells):
+            value = html.unescape(re.sub(r"<[^>]+>", "", cell)).strip()
+            try:
+                date = datetime.strptime(value, "%B %d, %Y").strftime("%Y/%m/%d")
+                break
+            except ValueError:
+                continue
+        return kb, date
+    return "", ""
+
+def is_generic_kb_url(url):
+    return "download-and-install-latest-updates" in (url or "")
 
 def replace_last_link(value, url, label):
     """Preserve the install path on the home page and replace its last update."""
@@ -345,13 +373,15 @@ def run():
             continue
         label = normalize_update_label(it["title"], r.get("update_label"))
         llm_date = (r.get("release_date") or "").strip()
-        date = choose_release_date(rss_date, llm_date)
+        table_kb, table_date = table_release_metadata(kb_text, build)
+        date = table_date or choose_release_date(rss_date, llm_date)
         if rss_date and llm_date and rss_date != llm_date:
-            print(f"    date mismatch: model={llm_date}, using RSS={rss_date}")
-        # The fetched URL came from the RSS item and is already constrained to
-        # Microsoft's support/learn domains. Do not let the model replace it
-        # with a download binary or an unrelated link found on the page.
-        kb = kb_url.strip()
+            source = "Microsoft table" if table_date else "RSS"
+            print(f"    date mismatch: model={llm_date}, using {source}={date}")
+        # Prefer the build's exact KB from Microsoft's update-index table. A
+        # generic index is useful for extraction but not as a reader-facing row
+        # link, so fall back to the specific source post if no KB can be found.
+        kb = table_kb or (it["link"] if is_generic_kb_url(kb_url) else kb_url.strip())
         _, _, all_rows = build_row(slug, label, kb, date, build)
         write_rows(slug, all_rows)
         added.append((version, slug, label, build, date, kb, it["title"], it["link"]))
@@ -439,6 +469,15 @@ def selftest():
           normalize_update_label("Security Update for SQL Server 2017 RTM CU31", "CU31") == "CU31 + GDR")
     check("plain CU label unchanged",
           normalize_update_label("Cumulative Update 7 for SQL Server 2025", "CU7") == "CU7")
+    table_html = ('<table><tr><td>17.0.4060.2</td><td>None</td><td>CU6 + GDR</td>'
+                  '<td><a href="https://support.microsoft.com/help/5101346">KB5101346</a></td>'
+                  '<td>July 14, 2026</td></tr></table>')
+    table_kb, table_date = table_release_metadata(table_html, "17.0.4060.2")
+    check("specific KB extracted from update table",
+          table_kb == "https://support.microsoft.com/help/5101346")
+    check("release date extracted from update table", table_date == "2026/07/14")
+    check("generic update index detected",
+          is_generic_kb_url("https://learn.microsoft.com/x/download-and-install-latest-updates"))
     home = {"home_table": {"rows": [{
         "version": "SQL Server 2025",
         "latest_update": '<a href="download">Download RTM</a> then <a href="cu6">CU6</a>',
