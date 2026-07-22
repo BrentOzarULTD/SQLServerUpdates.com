@@ -41,8 +41,9 @@ Automated checks run on your pull request:
 - **Validate** — data files parse, columns line up, build numbers look right,
   no duplicate builds, links are absolute URLs.
 - **Build** — the site generates cleanly.
-- **Verify** — the generated tables still match the reference snapshots in
-  `reference/` (this protects people who parse the site with code).
+- **Verify** — new version rows appear only at the top, while table headers and
+  all historical rows still match `reference/` exactly (this protects people
+  who parse the site with code).
 
 A maintainer reviews the small data diff and merges. On merge, the site is
 rebuilt and deployed automatically.
@@ -52,7 +53,7 @@ rebuilt and deployed automatically.
 ```bash
 python3 validate.py       # check the data
 python3 build.py          # generate _site/
-python3 test_snapshot.py  # confirm tables still match reference
+python3 test_snapshot.py  # confirm historical rows still match reference
 # then open _site/index.html in a browser
 ```
 
@@ -65,7 +66,8 @@ python3 test_snapshot.py  # confirm tables still match reference
 
 ## A note on the reference snapshots
 
-`reference/` holds a frozen copy of the original page content. The verify step
-compares generated output against it so structural changes can't slip in
-unnoticed. If you intentionally change a table's structure, update the reference
-in the same PR and explain why.
+`reference/` holds a frozen copy of the original page content. On version pages,
+the verify step allows new rows only at the top and requires the header plus all
+historical rows to remain identical. On the home page, only Latest Update and
+Build Number cells may change. If you intentionally change a table's structure,
+update the reference in the same PR and explain why.

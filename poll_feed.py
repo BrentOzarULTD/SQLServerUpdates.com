@@ -22,12 +22,14 @@ Usage:
 """
 import csv
 import gzip
+import html
 import json
 import os
 import re
 import sys
 import urllib.request
 import xml.etree.ElementTree as ET
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 ROOT = Path(__file__).parent
@@ -83,6 +85,52 @@ def parse_feed(xml_text):
             "description": g("description"),
         })
     return items
+
+def normalize_feed_date(value):
+    """Convert an RSS RFC 2822 publication timestamp to YYYY/MM/DD."""
+    if not value:
+        return ""
+    try:
+        return parsedate_to_datetime(value).date().strftime("%Y/%m/%d")
+    except (TypeError, ValueError, OverflowError):
+        return ""
+
+def choose_release_date(rss_date, model_date):
+    """Prefer the normalized RSS date; fall back only when the feed lacks one."""
+    return (rss_date or (model_date or "")).strip()
+
+def oldest_first(items):
+    """Process oldest releases first because each write prepends its row."""
+    return sorted(items, key=lambda item: normalize_feed_date(item.get("date", "")))
+
+def build_key(build):
+    """Comparable numeric key for a validated SQL Server build string."""
+    try:
+        return tuple(int(part) for part in build.split("."))
+    except (AttributeError, ValueError):
+        return ()
+
+def replace_last_link(value, url, label):
+    """Preserve the install path on the home page and replace its last update."""
+    link = f'<a href="{html.escape(url, quote=True)}">{html.escape(label)}</a>'
+    matches = list(re.finditer(r"<a\b[^>]*>.*?</a>", value or "", re.S | re.I))
+    if not matches:
+        return link
+    last = matches[-1]
+    return value[:last.start()] + link + value[last.end():]
+
+def apply_home_update(data, version, label, build, kb_url):
+    """Advance a home-table row only when the candidate has a higher build."""
+    wanted = f"SQL Server {version}"
+    for row in data.get("home_table", {}).get("rows", []):
+        if row.get("version") != wanted:
+            continue
+        if build_key(build) <= build_key(row.get("build", "")):
+            return False
+        row["latest_update"] = replace_last_link(row.get("latest_update", ""), kb_url, label)
+        row["build"] = build
+        return True
+    return False
 
 def title_version(title):
     if "2008 r2" in title.lower():
@@ -202,7 +250,7 @@ def fetch_first_ok(urls):
             print(f"    kb fetch failed ({u}): {e}")
     return None, None
 
-def llm_extract(api_key, title, desc_text, kb_url, kb_text, candidate_links):
+def llm_extract(api_key, title, rss_date, desc_text, kb_url, kb_text, candidate_links):
     system = (
         "You extract SQL Server release details. Respond ONLY with a JSON object: "
         "is_release (boolean), version (one of " + json.dumps(TRACKED_TOKENS) + " or null), "
@@ -210,12 +258,14 @@ def llm_extract(api_key, title, desc_text, kb_url, kb_text, candidate_links):
         "build (the SQL Server DATABASE ENGINE product version, formatted like "
         "17.0.4045.5 -- NOT the file version like 2025.170.4045.5, and NOT the "
         "Analysis Services version), kb_url (best KB/download link for THIS update), "
-        "release_date (YYYY/MM/DD), reason. is_release is true ONLY if this announces "
+        "release_date (YYYY/MM/DD; use the supplied RSS publication date when present), "
+        "reason. is_release is true ONLY if this announces "
         "a specific engine build number for one of the listed versions; false for "
         "SSMS, drivers, feature packs, roundups, or general posts."
     )
     user = (
         f"TITLE: {title}\n\n"
+        f"RSS PUBLICATION DATE (authoritative): {rss_date or 'unknown'}\n\n"
         f"RSS SUMMARY:\n{desc_text}\n\n"
         f"CANDIDATE KB LINKS: {candidate_links}\n\n"
         f"KB PAGE ({kb_url}):\n{kb_text}"
@@ -243,13 +293,14 @@ def run():
         sys.exit(1)
 
     feed = parse_feed(http_get(FEED_URL))
-    candidates = [it for it in feed if is_candidate(it["title"])]
+    candidates = oldest_first([it for it in feed if is_candidate(it["title"])])
     print(f"Feed items: {len(feed)}; candidates: {len(candidates)}")
 
     added = []
     kb_ok = 0
     llm_err = 0
     for it in candidates:
+        rss_date = normalize_feed_date(it["date"])
         kb_links = extract_kb_links(it["description"])
         if not kb_links:
             print(f"  skip (no KB link in feed): {it['title']}")
@@ -262,8 +313,9 @@ def run():
             continue
         kb_ok += 1
         try:
-            r = llm_extract(api_key, it["title"], strip_html(it["description"], 2000),
-                            kb_url, strip_html(kb_text), kb_links)
+            r = llm_extract(api_key, it["title"], rss_date,
+                            strip_html(it["description"], 2000), kb_url,
+                            strip_html(kb_text), kb_links)
         except Exception as e:
             llm_err += 1
             print(f"  skip (llm failed): {it['title']}: {e}")
@@ -279,7 +331,10 @@ def run():
         if build in existing_builds(slug):
             continue
         label = (r.get("update_label") or "Update").strip()
-        date = (r.get("release_date") or "").strip()
+        llm_date = (r.get("release_date") or "").strip()
+        date = choose_release_date(rss_date, llm_date)
+        if rss_date and llm_date and rss_date != llm_date:
+            print(f"    date mismatch: model={llm_date}, using RSS={rss_date}")
         kb = (r.get("kb_url") or kb_url).strip()
         _, _, all_rows = build_row(slug, label, kb, date, build)
         write_rows(slug, all_rows)
@@ -287,6 +342,15 @@ def run():
         print(f"  ADDED {version}: {label} {build} ({date})")
 
     if added:
+        versions_path = DATA / "versions.json"
+        versions_data = json.loads(versions_path.read_text(encoding="utf-8"))
+        home_updates = {}
+        for version, slug, label, build, date, kb, title, link in added:
+            if apply_home_update(versions_data, version, label, build, kb):
+                home_updates[version] = (label, build)
+        if home_updates:
+            versions_path.write_text(json.dumps(versions_data, indent=2) + "\n", encoding="utf-8")
+
         lines = ["Automated update from the Microsoft SQL Server blog RSS feed.\n",
                  "The following build(s) were detected and added. **Please verify each "
                  "against its source post before merging.**\n",
@@ -294,8 +358,12 @@ def run():
                  "|---|---|---|---|---|---|"]
         for v, slug, label, build, date, kb, title, link in added:
             lines.append(f"| SQL Server {v} | {label} | `{build}` | {date} | [KB]({kb}) | [post]({link}) |")
-        lines.append("\n> The home-page \"Latest Update\" pointer in `data/versions.json` is "
-                     "left unchanged; update it here if this is now the newest release.")
+        if home_updates:
+            summary = ", ".join(f"SQL Server {v} to {label} (`{build}`)"
+                                for v, (label, build) in home_updates.items())
+            lines.append(f"\nThe home-page latest-build pointer was advanced for: {summary}.")
+        else:
+            lines.append("\nThe home-page latest-build pointers were already on higher builds.")
         Path(ROOT / "pr_body.md").write_text("\n".join(lines), encoding="utf-8")
 
     print(f"\nSummary: candidates={len(candidates)} kb_fetched={kb_ok} "
@@ -340,6 +408,26 @@ def selftest():
     check("file version rejected", not valid_build("2025", "2025.170.4045.5"))
     check("cross-version rejected", not valid_build("2022", "17.0.4045.5"))
     check("2022 build valid", valid_build("2022", "16.0.4300.1"))
+    check("RSS date normalized",
+          normalize_feed_date("Thu, 16 Jul 2026 17:30:00 +0000") == "2026/07/16")
+    check("invalid RSS date rejected", normalize_feed_date("not a date") == "")
+    check("RSS date overrides model date",
+          choose_release_date("2026/07/16", "2023/07/14") == "2026/07/16")
+    check("model date is fallback", choose_release_date("", "2026/07/14") == "2026/07/14")
+    ordered = oldest_first([{"date": "Thu, 16 Jul 2026 00:00:00 +0000", "id": "new"},
+                            {"date": "Tue, 14 Jul 2026 00:00:00 +0000", "id": "old"}])
+    check("feed processed oldest first", [item["id"] for item in ordered] == ["old", "new"])
+    home = {"home_table": {"rows": [{
+        "version": "SQL Server 2025",
+        "latest_update": '<a href="download">Download RTM</a> then <a href="cu6">CU6</a>',
+        "build": "17.0.4055.5",
+    }]}}
+    check("higher build advances home",
+          apply_home_update(home, "2025", "CU7", "17.0.4065.4", "https://example.com/cu7"))
+    check("home install path preserved",
+          home["home_table"]["rows"][0]["latest_update"].startswith('<a href="download">'))
+    check("lower build does not regress home",
+          not apply_home_update(home, "2025", "GDR", "17.0.1125.2", "https://example.com/gdr"))
 
     if (DATA / "updates" / "sql-server-2022-updates.csv").exists():
         h, row, allr = build_row("sql-server-2022-updates", "CU99",
