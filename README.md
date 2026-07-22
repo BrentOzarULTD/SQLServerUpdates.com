@@ -51,13 +51,14 @@ automatically.
 
 ## Automated build detection
 
-`.github/workflows/poll-feed.yml` runs every 6 hours and checks Microsoft's
+`.github/workflows/poll-feed.yml` runs every 6 hours and checks both Microsoft's
 [SQL Server blog RSS feed](https://techcommunity.microsoft.com/t5/s/gxcuf89792/rss/board?board.id=SQLServer)
-for new cumulative updates, GDR/security updates, and service packs. For each
-new release it uses an LLM (`poll_feed.py`, OpenAI, called over plain `urllib` —
-no dependencies) to extract the version, build number, and KB link. The release
-date comes from the RSS publication timestamp. It adds a row to the right
-`data/updates/*.csv`, advances the home-page pointer when the build is higher,
-and opens a **pull request** labeled `needs-review`. A human always reviews
-before it goes live; the same CI checks run on the change. Requires an
+and [latest SQL Server updates table](https://learn.microsoft.com/en-us/troubleshoot/sql/releases/download-and-install-latest-updates)
+for new cumulative updates, GDR/security updates, and service packs. RSS posts
+use an LLM (`poll_feed.py`, OpenAI, called over plain `urllib` — no dependencies)
+to extract release details. The Microsoft table is parsed deterministically, so
+it can discover a new build even when no blog post is published. It adds a row
+to the right `data/updates/*.csv`, advances the home-page pointer when the build
+is higher, and opens a **pull request** labeled `needs-review`. A human always
+reviews before it goes live; the same CI checks run on the change. Requires an
 `OPENAI_API_KEY` repository secret.

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Poll Microsoft's SQL Server blog RSS feed for new build releases (cumulative
-updates, GDR/security updates, service packs), use an LLM to extract the
+Poll Microsoft's SQL Server blog RSS feed and latest-updates table for new build
+releases (cumulative updates, GDR/security updates, service packs), extract the
 structured details, and add them to the data files.
 
 Designed to run in GitHub Actions on a schedule. When it changes any data file,
@@ -28,6 +28,7 @@ import os
 import re
 import sys
 import urllib.request
+from urllib.parse import urljoin
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -37,6 +38,8 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).parent
 DATA = ROOT / "data"
 FEED_URL = "https://techcommunity.microsoft.com/t5/s/gxcuf89792/rss/board?board.id=SQLServer"
+UPDATES_URL = ("https://learn.microsoft.com/en-us/troubleshoot/sql/releases/"
+               "download-and-install-latest-updates")
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 SITE_TIMEZONE = ZoneInfo("America/Los_Angeles")
@@ -148,6 +151,59 @@ def table_release_metadata(page_html, build):
         return kb, date
     return "", ""
 
+def clean_cell(value):
+    """Turn a small Microsoft table cell into normalized plain text."""
+    value = re.sub(r"<br\s*/?>", " ", value or "", flags=re.I)
+    value = re.sub(r"<[^>]+>", "", value)
+    return re.sub(r"\s+", " ", html.unescape(value)).strip()
+
+def parse_latest_updates(page_html):
+    """Parse release rows from Microsoft's complete SQL Server version tables."""
+    versions = {version.lower().replace(" ", "-"): version
+                for version in VERSION_TO_SLUG}
+    section_re = re.compile(
+        r'<h3\b[^>]*id="sql-server-([^"\s]+)"[^>]*>.*?</h3>'
+        r'(.*?)(?=<h[23]\b|\Z)', re.S | re.I)
+    updates = []
+    seen = set()
+    for match in section_re.finditer(page_html or ""):
+        version = versions.get(match.group(1).lower())
+        if not version:
+            continue
+        for tr in re.findall(r"<tr\b[^>]*>(.*?)</tr>", match.group(2), re.S | re.I):
+            cells = re.findall(r"<td\b[^>]*>(.*?)</td>", tr, re.S | re.I)
+            if len(cells) < 5:
+                continue
+            build = clean_cell(cells[0])
+            if not valid_build(version, build) or (version, build) in seen:
+                continue
+            service_pack = clean_cell(cells[1])
+            label = clean_cell(cells[2])
+            if (not label or label.upper() in {"NA", "N/A", "NONE"} or
+                    "azure connect" in (service_pack + " " + label).lower()):
+                continue
+            hrefs = re.findall(r'href=["\']([^"\']+)["\']', cells[3], re.I)
+            if not hrefs:
+                continue
+            kb_url = urljoin(UPDATES_URL, html.unescape(hrefs[0]))
+            if not re.match(r"https://(?:learn|support)\.microsoft\.com/", kb_url, re.I):
+                continue
+            date_text = clean_cell(cells[4])
+            try:
+                date = datetime.strptime(date_text, "%B %d, %Y").strftime("%Y/%m/%d")
+            except ValueError:
+                continue
+            seen.add((version, build))
+            updates.append({
+                "version": version,
+                "label": label,
+                "build": build,
+                "kb_url": kb_url,
+                "date": date,
+                "source_url": f"{UPDATES_URL}#sql-server-{match.group(1).lower()}",
+            })
+    return updates
+
 def is_generic_kb_url(url):
     return "download-and-install-latest-updates" in (url or "")
 
@@ -229,6 +285,34 @@ def existing_builds(slug):
             if b:
                 builds.add(b)
     return builds
+
+def latest_existing_date(slug):
+    """Newest valid release date currently stored for a version page."""
+    path = DATA / "updates" / f"{slug}.csv"
+    with open(path, newline="", encoding="utf-8") as f:
+        rows = list(csv.reader(f))
+    idx = {n.strip().lower(): i for i, n in enumerate(rows[0])}
+    di = idx.get("release date")
+    dates = []
+    if di is not None:
+        for row in rows[1:]:
+            if di < len(row) and re.fullmatch(r"\d{4}/\d{2}/\d{2}", row[di].strip()):
+                dates.append(row[di].strip())
+    return max(dates, default="")
+
+def select_new_table_updates(updates, known_builds, latest_dates):
+    """Select unseen rows no older than each local version's newest release."""
+    selected = []
+    for update in updates:
+        slug = VERSION_TO_SLUG[update["version"]]
+        if update["build"] in known_builds.get(slug, set()):
+            continue
+        cutoff = latest_dates.get(slug, "")
+        if cutoff and update["date"] < cutoff:
+            continue
+        selected.append(update)
+    # Rows are prepended as they are written, so oldest/lower builds go first.
+    return sorted(selected, key=lambda item: (item["date"], build_key(item["build"])))
 
 def build_row(slug, label, kb_url, date, build):
     path = DATA / "updates" / f"{slug}.csv"
@@ -333,9 +417,14 @@ def run():
         print("ERROR: OPENAI_API_KEY not set", file=sys.stderr)
         sys.exit(1)
 
+    # Both sources are required for a successful monitoring pass. Fetch them
+    # before writing anything so a partial Microsoft outage cannot look green.
     feed = parse_feed(http_get(FEED_URL))
+    updates_page = http_get(UPDATES_URL)
     candidates = oldest_first([it for it in feed if is_candidate(it["title"])])
-    print(f"Feed items: {len(feed)}; candidates: {len(candidates)}")
+    table_updates = parse_latest_updates(updates_page)
+    print(f"Feed items: {len(feed)}; RSS candidates: {len(candidates)}; "
+          f"Microsoft table rows: {len(table_updates)}")
 
     added = []
     kb_ok = 0
@@ -373,7 +462,7 @@ def run():
             continue
         label = normalize_update_label(it["title"], r.get("update_label"))
         llm_date = (r.get("release_date") or "").strip()
-        table_kb, table_date = table_release_metadata(kb_text, build)
+        table_kb, table_date = table_release_metadata(updates_page, build)
         date = table_date or choose_release_date(rss_date, llm_date)
         if rss_date and llm_date and rss_date != llm_date:
             source = "Microsoft table" if table_date else "RSS"
@@ -387,6 +476,23 @@ def run():
         added.append((version, slug, label, build, date, kb, it["title"], it["link"]))
         print(f"  ADDED {version}: {label} {build} ({date})")
 
+    known_builds = {slug: existing_builds(slug) for slug in VERSION_TO_SLUG.values()}
+    latest_dates = {slug: latest_existing_date(slug) for slug in VERSION_TO_SLUG.values()}
+    table_candidates = select_new_table_updates(table_updates, known_builds, latest_dates)
+    for update in table_candidates:
+        version = update["version"]
+        slug = VERSION_TO_SLUG[version]
+        label = update["label"]
+        build = update["build"]
+        date = update["date"]
+        kb = update["kb_url"]
+        _, _, all_rows = build_row(slug, label, kb, date, build)
+        write_rows(slug, all_rows)
+        title = f"Microsoft latest-updates table: SQL Server {version} {label}"
+        added.append((version, slug, label, build, date, kb, title,
+                      update["source_url"]))
+        print(f"  ADDED from Microsoft table {version}: {label} {build} ({date})")
+
     if added:
         versions_path = DATA / "versions.json"
         versions_data = json.loads(versions_path.read_text(encoding="utf-8"))
@@ -397,13 +503,14 @@ def run():
         if home_updates:
             versions_path.write_text(json.dumps(versions_data, indent=2) + "\n", encoding="utf-8")
 
-        lines = ["Automated update from the Microsoft SQL Server blog RSS feed.\n",
+        lines = ["Automated update from Microsoft's SQL Server blog RSS feed "
+                 "and latest-updates table.\n",
                  "The following build(s) were detected and added. **Please verify each "
-                 "against its source post before merging.**\n",
+                 "against its Microsoft source before merging.**\n",
                  "| Version | Update | Build | Date | KB | Source |",
                  "|---|---|---|---|---|---|"]
         for v, slug, label, build, date, kb, title, link in added:
-            lines.append(f"| SQL Server {v} | {label} | `{build}` | {date} | [KB]({kb}) | [post]({link}) |")
+            lines.append(f"| SQL Server {v} | {label} | `{build}` | {date} | [KB]({kb}) | [source]({link}) |")
         if home_updates:
             summary = ", ".join(f"SQL Server {v} to {label} (`{build}`)"
                                 for v, (label, build) in home_updates.items())
@@ -412,8 +519,8 @@ def run():
             lines.append("\nThe home-page latest-build pointers were already on higher builds.")
         Path(ROOT / "pr_body.md").write_text("\n".join(lines), encoding="utf-8")
 
-    print(f"\nSummary: candidates={len(candidates)} kb_fetched={kb_ok} "
-          f"llm_errors={llm_err} added={len(added)}")
+    print(f"\nSummary: rss_candidates={len(candidates)} table_candidates={len(table_candidates)} "
+          f"kb_fetched={kb_ok} llm_errors={llm_err} added={len(added)}")
     if added:
         print(f"{len(added)} build(s) added.")
     elif kb_ok and llm_err == kb_ok:
@@ -478,6 +585,34 @@ def selftest():
     check("release date extracted from update table", table_date == "2026/07/14")
     check("generic update index detected",
           is_generic_kb_url("https://learn.microsoft.com/x/download-and-install-latest-updates"))
+    latest_html = ('<h3 id="sql-server-2025">SQL Server 2025</h3><table><tbody>'
+                   '<tr><td>17.0.4065.4</td><td>None</td><td>CU7</td>'
+                   '<td><a href="https://support.microsoft.com/help/5096981">KB5096981</a></td>'
+                   '<td>July 16, 2026</td></tr></tbody></table>'
+                   '<h3 id="sql-server-2016">SQL Server 2016</h3><table><tbody>'
+                   '<tr><td>13.0.7095.1</td><td>Azure Connect pack</td><td>GDR</td>'
+                   '<td><a href="https://support.microsoft.com/help/1">KB1</a></td>'
+                   '<td>July 14, 2026</td></tr></tbody></table>')
+    parsed_latest = parse_latest_updates(latest_html)
+    check("latest-updates table parsed", parsed_latest == [{
+        "version": "2025", "label": "CU7", "build": "17.0.4065.4",
+        "kb_url": "https://support.microsoft.com/help/5096981",
+        "date": "2026/07/16",
+        "source_url": UPDATES_URL + "#sql-server-2025",
+    }])
+    selected_latest = select_new_table_updates(
+        parsed_latest,
+        {"sql-server-2025-updates": {"17.0.4055.5"}},
+        {"sql-server-2025-updates": "2026/06/17"})
+    check("new table row selected", [item["build"] for item in selected_latest] == ["17.0.4065.4"])
+    check("known table row skipped", not select_new_table_updates(
+        parsed_latest,
+        {"sql-server-2025-updates": {"17.0.4065.4"}},
+        {"sql-server-2025-updates": "2026/07/16"}))
+    check("historical table gap skipped", not select_new_table_updates(
+        parsed_latest,
+        {"sql-server-2025-updates": set()},
+        {"sql-server-2025-updates": "2026/07/17"}))
     home = {"home_table": {"rows": [{
         "version": "SQL Server 2025",
         "latest_update": '<a href="download">Download RTM</a> then <a href="cu6">CU6</a>',

@@ -1,8 +1,8 @@
-name: Poll Microsoft RSS for new builds
+name: Poll Microsoft sources for new builds
 
-# Every 6 hours, check the Microsoft SQL Server blog RSS feed for new build
-# releases, use an LLM to extract the details, and open a pull request with any
-# new builds for a human to review and merge. Never publishes unreviewed.
+# Every 6 hours, check the Microsoft SQL Server blog RSS feed and latest-updates
+# table for new build releases, then open a pull request with any new builds for
+# a human to review and merge. Never publishes unreviewed.
 
 on:
   schedule:
@@ -24,7 +24,7 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Poll feed and extract new builds
+      - name: Poll Microsoft sources and extract new builds
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: python3 poll_feed.py
@@ -52,8 +52,8 @@ jobs:
           add-paths: data
           branch: bot/new-sql-builds
           base: main
-          title: "New SQL Server build(s) from Microsoft RSS"
+          title: "New SQL Server build(s) from Microsoft sources"
           body-path: pr_body.md
-          commit-message: "Add new SQL Server build(s) from Microsoft RSS feed"
+          commit-message: "Add new SQL Server build(s) from Microsoft sources"
           labels: automated, needs-review
           delete-branch: true
