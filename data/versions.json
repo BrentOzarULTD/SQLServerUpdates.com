@@ -72,8 +72,8 @@
       },
       {
         "version": "SQL Server 2025",
-        "latest_update": "<a href=\"https://info.microsoft.com/ww-landing-sql-server-2025.html\">Download RTM</a> then <a href=\"https://support.microsoft.com/help/5096981\">CU7</a>",
-        "build": "17.0.4065.4",
+        "latest_update": "<a href=\"https://info.microsoft.com/ww-landing-sql-server-2025.html\">Download RTM</a> then <a href=\"https://support.microsoft.com/help/5104822\">CU8</a>",
+        "build": "17.0.4075.5",
         "support_ends": "2036/01/06",
         "other_updates": "<a href=\"https://sqlserverupdates.com/sql-server-2025-updates/\">Other SQL 2025 Updates</a>"
       },
