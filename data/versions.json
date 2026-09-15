@@ -72,15 +72,15 @@
       },
       {
         "version": "SQL Server 2025",
-        "latest_update": "<a href=\"https://info.microsoft.com/ww-landing-sql-server-2025.html\">Download RTM</a> then <a href=\"https://support.microsoft.com/help/5122769\">CU8 + GDR</a>",
-        "build": "17.0.4085.5",
+        "latest_update": "<a href=\"https://info.microsoft.com/ww-landing-sql-server-2025.html\">Download RTM</a> then <a href=\"https://support.microsoft.com/help/5122048\">CU9</a>",
+        "build": "17.0.5005.3",
         "support_ends": "2036/01/06",
         "other_updates": "<a href=\"https://sqlserverupdates.com/sql-server-2025-updates/\">Other SQL 2025 Updates</a>"
       },
       {
         "version": "SQL Server 2022",
-        "latest_update": "<a href=\"https://info.microsoft.com/ww-landing-sql-server-2022.html\">Download RTM</a> then <a href=\"https://support.microsoft.com/help/5122768\">CU26 + GDR</a>",
-        "build": "16.0.4275.2",
+        "latest_update": "<a href=\"https://info.microsoft.com/ww-landing-sql-server-2022.html\">Download RTM</a> then <a href=\"https://support.microsoft.com/help/5104824\">CU27</a>",
+        "build": "16.0.4295.3",
         "support_ends": "2033/01/11",
         "other_updates": "<a href=\"https://sqlserverupdates.com/sql-server-2022-updates/\">Other SQL 2022 Updates</a>"
       },
