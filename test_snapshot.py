@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Fidelity test: the tables rendered into _site/ must preserve the structure and
-historical content captured in reference/. Version pages may prepend new data
-rows. The home page may advance only its latest-update links and build numbers.
+historical content captured in reference/. Version pages may add data rows and
+sort by numeric build. Home may change its update links and build numbers.
 This protects people who parse the site programmatically without preventing
 legitimate updates.
 
@@ -10,6 +10,7 @@ Run:  python3 build.py && python3 test_snapshot.py
 """
 import re
 import sys
+from collections import Counter
 from pathlib import Path
 
 ROOT = Path(__file__).parent
@@ -30,9 +31,8 @@ PAGES = {
     "sql-server-2008-updates/index.html": "sql-server-2008-updates.html",
 }
 
-# Version-page CSVs are newest-first, so legitimate additions appear directly
-# after the header. The home page may update only its Latest Update and Build
-# Number cells; its shape and other cells remain frozen.
+# Version pages preserve every historical row but sort by build, so additions
+# can appear anywhere. Home's shape and protected columns remain frozen.
 ALLOW_PREPENDED_ROWS = set(PAGES) - {"index.html"}
 
 def norm(s):
@@ -58,10 +58,8 @@ def table_rows(htmlstr):
 def row_differences(generated, reference, allow_prepend=False):
     """Return row-level fidelity failures.
 
-    With allow_prepend, generated may contain extra rows immediately after the
-    header. The reference header and historical data rows must still match at
-    their shifted positions, which rejects deletions, edits, and rows appended
-    at the bottom.
+    With allow_prepend (the legacy parameter name), additional rows and numeric
+    reordering are allowed. Every historical cell and link must remain intact.
     """
     if not allow_prepend:
         if len(generated) != len(reference):
@@ -72,8 +70,13 @@ def row_differences(generated, reference, allow_prepend=False):
             return [f"row count {len(generated)} < reference {len(reference)}"]
         if not reference:
             return [] if not generated else ["reference has no rows but generated table does"]
-        added = len(generated) - len(reference)
-        pairs = [(0, 0)] + [(i + added, i) for i in range(1, len(reference))]
+        def freeze(row):
+            return tuple((text, tuple(links)) for text, links in row)
+        missing = Counter(map(freeze, reference[1:])) - Counter(map(freeze, generated[1:]))
+        failures = [f"historical row missing or edited: {row}" for row in missing]
+        if generated[0] != reference[0]:
+            failures.append("table header differs from reference")
+        return failures
 
     failures = []
     for gen_i, ref_i in pairs:
@@ -84,6 +87,20 @@ def row_differences(generated, reference, allow_prepend=False):
                 f"   reference : {reference[ref_i]}"
             )
     return failures
+
+def build_order_differences(rows):
+    """Check descending numeric builds; legacy placeholders follow real builds."""
+    if not rows:
+        return []
+    build_i = next((i for i, cell in enumerate(rows[0]) if cell[0].lower() == "build"), None)
+    if build_i is None:
+        return ["table is missing its Build column"]
+    keys = []
+    for row in rows[1:]:
+        value = row[build_i][0]
+        keys.append(tuple(int(p) for p in value.split("."))
+                    if re.fullmatch(r"\d+(?:\.\d+)+", value) else ())
+    return [] if keys == sorted(keys, reverse=True) else ["builds are not in descending numeric order"]
 
 def home_row_differences(generated, reference):
     """Allow only Latest Update and Build Number cells to change on home."""
@@ -129,7 +146,14 @@ def selftest():
         ("prepended row rejected in strict mode", bool(row_differences([header, new, old1, old2], reference))),
         ("historical edit rejected", bool(row_differences([header, new, changed, old2], reference, True))),
         ("historical deletion rejected", bool(row_differences([header, old2], reference, True))),
-        ("appended row rejected", bool(row_differences([header, old1, old2, new], reference, True))),
+        ("reordered historical rows allowed", not row_differences([header, old2, new, old1], reference, True)),
+        ("duplicate does not hide deletion", bool(row_differences([header, old1, old1], reference, True))),
+        ("numeric build ordering accepted", not build_order_differences([header,
+         [("CU10", []), ("17.0.5005.3", [])], [("CU9", []), ("17.0.4085.5", [])],
+         [("GDR", []), ("17.0.1145.4", [])]])),
+        ("RTM GDR interleaving rejected", bool(build_order_differences([header,
+         [("CU10", []), ("17.0.5005.3", [])], [("GDR", []), ("17.0.1145.4", [])],
+         [("CU9", []), ("17.0.4085.5", [])]]))),
         ("header edit rejected", bool(row_differences([[('Patch', []), ('Build', [])], old1, old2], reference, True))),
         ("home latest cells allowed",
          not home_row_differences([home_header, home_new], [home_header, home_old])),
@@ -154,6 +178,8 @@ def main():
         allow_prepend = gen in ALLOW_PREPENDED_ROWS
         messages = (row_differences(g, r, allow_prepend) if allow_prepend
                     else home_row_differences(g, r))
+        if allow_prepend:
+            messages.extend(build_order_differences(g))
         failures.extend(f"{gen}: {msg}" for msg in messages)
         if allow_prepend and len(g) >= len(r):
             added_rows += len(g) - len(r)

@@ -24,6 +24,9 @@ jobs:
         with:
           python-version: "3.x"
 
+      - name: Test release processing
+        run: python3 -m unittest test_releases.py
+
       - name: Poll Microsoft sources and extract new builds
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -56,4 +59,6 @@ jobs:
           body-path: pr_body.md
           commit-message: "Add new SQL Server build(s) from Microsoft sources"
           labels: automated, needs-review
+          assignees: BrentOzar
+          reviewers: BrentOzar
           delete-branch: true

@@ -9,6 +9,7 @@ import csv
 import html
 import json
 import os
+import re
 import shutil
 from pathlib import Path
 
@@ -41,7 +42,14 @@ def render_table(header, rows, header_tag="th"):
 def load_csv(slug):
     with open(DATA / "updates" / f"{slug}.csv", newline="", encoding="utf-8") as f:
         rows = list(csv.reader(f))
-    return (rows[0], rows[1:]) if rows else ([], [])
+    if not rows:
+        return [], []
+    header = rows[0]
+    build_i = next(i for i, cell in enumerate(header) if cell.lower() == "build")
+    def key(row):
+        value = html.unescape(re.sub(r"<[^>]*>", "", row[build_i])).strip()
+        return tuple(int(part) for part in value.split(".")) if re.fullmatch(r"\d+(?:\.\d+)+", value) else ()
+    return header, sorted(rows[1:], key=key, reverse=True)
 
 def layout(data, title, body, description=None, canonical=None):
     site = data["site"]

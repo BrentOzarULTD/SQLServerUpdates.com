@@ -38,8 +38,7 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).parent
 DATA = ROOT / "data"
 FEED_URL = "https://techcommunity.microsoft.com/t5/s/gxcuf89792/rss/board?board.id=SQLServer"
-UPDATES_URL = ("https://learn.microsoft.com/en-us/troubleshoot/sql/releases/"
-               "download-and-install-latest-updates")
+UPDATES_URL = "https://support.microsoft.com/en-us/servicing/sql/kb321185-download-and-install-latest-updates"
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
 SITE_TIMEZONE = ZoneInfo("America/Los_Angeles")
@@ -137,8 +136,9 @@ def table_release_metadata(page_html, build):
             continue
         kb = ""
         for url in re.findall(r'href="([^"]+)"', tr, re.I):
-            if re.match(r"https://support\.microsoft\.com/(?:help|kb)/\d+$", url, re.I):
-                kb = html.unescape(url)
+            url = microsoft_url(url)
+            if re.match(r"https://(?:support|learn)\.microsoft\.com/", url, re.I):
+                kb = url
                 break
         date = ""
         for cell in reversed(cells):
@@ -156,6 +156,12 @@ def clean_cell(value):
     value = re.sub(r"<br\s*/?>", " ", value or "", flags=re.I)
     value = re.sub(r"<[^>]+>", "", value)
     return re.sub(r"\s+", " ", html.unescape(value)).strip()
+
+def microsoft_url(value):
+    """Resolve Support's relative links and repair old Learn /help URLs."""
+    url = urljoin(UPDATES_URL, html.unescape(value))
+    return re.sub(r"^https://learn\.microsoft\.com/((?:[a-z]{2}-[a-z]{2}/)?(?:help|kb)/)",
+                  r"https://support.microsoft.com/\1", url, flags=re.I)
 
 def parse_latest_updates(page_html):
     """Parse release rows from Microsoft's complete SQL Server version tables."""
@@ -185,7 +191,7 @@ def parse_latest_updates(page_html):
             hrefs = re.findall(r'href=["\']([^"\']+)["\']', cells[3], re.I)
             if not hrefs:
                 continue
-            kb_url = urljoin(UPDATES_URL, html.unescape(hrefs[0]))
+            kb_url = microsoft_url(hrefs[0])
             if not re.match(r"https://(?:learn|support)\.microsoft\.com/", kb_url, re.I):
                 continue
             date_text = clean_cell(cells[4])
@@ -207,26 +213,55 @@ def parse_latest_updates(page_html):
 def is_generic_kb_url(url):
     return "download-and-install-latest-updates" in (url or "")
 
-def replace_last_link(value, url, label):
-    """Preserve the install path on the home page and replace its last update."""
-    link = f'<a href="{html.escape(url, quote=True)}">{html.escape(label)}</a>'
-    matches = list(re.finditer(r"<a\b[^>]*>.*?</a>", value or "", re.S | re.I))
-    if not matches:
-        return link
-    last = matches[-1]
-    return value[:last.start()] + link + value[last.end():]
+def release_links(slug):
+    """Build, label, and link for each locally known release."""
+    with open(DATA / "updates" / f"{slug}.csv", newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    releases = []
+    for row in rows:
+        value = row.get("Cumulative Update") or row.get("Service Pack") or ""
+        urls = re.findall(r'href="([^"]+)"', value, re.I)
+        if urls:
+            releases.append({"label": clean_cell(value), "kb_url": microsoft_url(urls[0]),
+                             "build": row.get("Build", "")})
+    return releases
 
-def apply_home_update(data, version, label, build, kb_url):
-    """Advance a home-table row only when the candidate has a higher build."""
+def home_install_path(value, label, url, releases):
+    """Keep base install/SP links, then emit separate CU and GDR downloads."""
+    def anchor(href, text):
+        return f'<a href="{html.escape(microsoft_url(href), quote=True)}">{html.escape(text)}</a>'
+
+    steps = []
+    for href, text in re.findall(r'<a\b[^>]*href="([^"]+)"[^>]*>(.*?)</a>', value, re.S | re.I):
+        text = clean_cell(text)
+        if text.lower().startswith("download") or re.fullmatch(r"SP\d+", text, re.I):
+            steps.append(anchor(href, text))
+    cu = re.search(r"\bCU\d+\b", label, re.I)
+    if cu and "GDR" in label.upper():
+        base = next((r for r in releases if r["label"].upper() == cu.group().upper()), None)
+        if base is None:
+            raise ValueError(f"Cannot publish {label}: separate {cu.group()} download is missing")
+        steps.append(anchor(base["kb_url"], cu.group().upper()))
+        steps.append(anchor(url, "GDR"))
+    else:
+        steps.append(anchor(url, label))
+    return " then ".join(steps)
+
+def apply_home_update(data, version, label, build, kb_url, releases=None):
+    """Advance the homepage, or repair the install path for its current build."""
     wanted = f"SQL Server {version}"
     for row in data.get("home_table", {}).get("rows", []):
         if row.get("version") != wanted:
             continue
-        if build_key(build) <= build_key(row.get("build", "")):
+        if build_key(build) < build_key(row.get("build", "")):
             return False
-        row["latest_update"] = replace_last_link(row.get("latest_update", ""), kb_url, label)
+        if releases is None:
+            releases = release_links(VERSION_TO_SLUG[version])
+        path = home_install_path(row.get("latest_update", ""), label, kb_url, releases)
+        changed = path != row.get("latest_update") or build != row.get("build")
+        row["latest_update"] = path
         row["build"] = build
-        return True
+        return changed
     return False
 
 def title_version(title):
@@ -423,6 +458,8 @@ def run():
     updates_page = http_get(UPDATES_URL)
     candidates = oldest_first([it for it in feed if is_candidate(it["title"])])
     table_updates = parse_latest_updates(updates_page)
+    if not table_updates:
+        raise ValueError("Microsoft release table contained no valid rows; page format may have changed")
     print(f"Feed items: {len(feed)}; RSS candidates: {len(candidates)}; "
           f"Microsoft table rows: {len(table_updates)}")
 
@@ -498,7 +535,8 @@ def run():
         versions_data = json.loads(versions_path.read_text(encoding="utf-8"))
         home_updates = {}
         for version, slug, label, build, date, kb, title, link in added:
-            if apply_home_update(versions_data, version, label, build, kb):
+            releases = release_links(slug) + [u for u in table_updates if u["version"] == version]
+            if apply_home_update(versions_data, version, label, build, kb, releases):
                 home_updates[version] = (label, build)
         if home_updates:
             versions_path.write_text(json.dumps(versions_data, indent=2) + "\n", encoding="utf-8")
@@ -615,13 +653,13 @@ def selftest():
         {"sql-server-2025-updates": "2026/07/17"}))
     home = {"home_table": {"rows": [{
         "version": "SQL Server 2025",
-        "latest_update": '<a href="download">Download RTM</a> then <a href="cu6">CU6</a>',
+        "latest_update": '<a href="https://example.com/download">Download RTM</a> then <a href="cu6">CU6</a>',
         "build": "17.0.4055.5",
     }]}}
     check("higher build advances home",
           apply_home_update(home, "2025", "CU7", "17.0.4065.4", "https://example.com/cu7"))
     check("home install path preserved",
-          home["home_table"]["rows"][0]["latest_update"].startswith('<a href="download">'))
+          home["home_table"]["rows"][0]["latest_update"].startswith('<a href="https://example.com/download">'))
     check("lower build does not regress home",
           not apply_home_update(home, "2025", "GDR", "17.0.1125.2", "https://example.com/gdr"))
 

@@ -23,6 +23,12 @@ jobs:
       - name: Validate data files
         run: python3 validate.py
 
+      - name: Test release links, install steps, and build ordering
+        run: |
+          python3 -m unittest test_releases.py
+          python3 poll_feed.py --selftest
+          python3 test_snapshot.py --selftest
+
       - name: Build the site
         run: python3 build.py
 

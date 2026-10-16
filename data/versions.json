@@ -72,28 +72,28 @@
       },
       {
         "version": "SQL Server 2025",
-        "latest_update": "<a href=\"https://info.microsoft.com/ww-landing-sql-server-2025.html\">Download RTM</a> then <a href=\"https://learn.microsoft.com/en-us/help/5126967\">CU9 + GDR</a>",
+        "latest_update": "<a href=\"https://info.microsoft.com/ww-landing-sql-server-2025.html\">Download RTM</a> then <a href=\"https://support.microsoft.com/en-us/help/5122048\">CU9</a> then <a href=\"https://support.microsoft.com/en-us/help/5126967\">GDR</a>",
         "build": "17.0.5015.4",
         "support_ends": "2036/01/06",
         "other_updates": "<a href=\"https://sqlserverupdates.com/sql-server-2025-updates/\">Other SQL 2025 Updates</a>"
       },
       {
         "version": "SQL Server 2022",
-        "latest_update": "<a href=\"https://info.microsoft.com/ww-landing-sql-server-2022.html\">Download RTM</a> then <a href=\"https://learn.microsoft.com/en-us/help/5126934\">CU27 + GDR</a>",
+        "latest_update": "<a href=\"https://info.microsoft.com/ww-landing-sql-server-2022.html\">Download RTM</a> then <a href=\"https://support.microsoft.com/en-us/help/5104824\">CU27</a> then <a href=\"https://support.microsoft.com/en-us/help/5126934\">GDR</a>",
         "build": "16.0.4305.5",
         "support_ends": "2033/01/11",
         "other_updates": "<a href=\"https://sqlserverupdates.com/sql-server-2022-updates/\">Other SQL 2022 Updates</a>"
       },
       {
         "version": "SQL Server 2019",
-        "latest_update": "<a href=\"https://info.microsoft.com/ww-landing-sql-server-2019.html\">Download RTM</a>&nbsp;then <a href=\"https://learn.microsoft.com/en-us/troubleshoot/sql/releases/sqlserver-2019/cumulativeupdate32\">CU32</a> then <a href=\"https://learn.microsoft.com/en-us/help/5128494\">CU32 + GDR</a>",
+        "latest_update": "<a href=\"https://info.microsoft.com/ww-landing-sql-server-2019.html\">Download RTM</a> then <a href=\"https://support.microsoft.com/en-us/help/5054833\">CU32</a> then <a href=\"https://support.microsoft.com/en-us/help/5128494\">GDR</a>",
         "build": "15.0.4500.2",
         "support_ends": "2030/01/08",
         "other_updates": "<a href=\"https://sqlserverupdates.com/sql-server-2019-updates/\">Other SQL 2019 Updates</a>"
       },
       {
         "version": "SQL Server 2017",
-        "latest_update": "<a href=\"https://www.microsoft.com/en-us/evalcenter/evaluate-sql-server-2017-rtm\">Download RTM</a>&nbsp;then&nbsp;<a href=\"https://support.microsoft.com/en-us/topic/kb5016884-cumulative-update-31-for-sql-server-2017-6aa612d0-c97e-4c54-a41f-37f53777ba4c\">CU31</a> then <a href=\"https://learn.microsoft.com/en-us/help/5128496\">CU31 + GDR</a>",
+        "latest_update": "<a href=\"https://www.microsoft.com/en-us/evalcenter/evaluate-sql-server-2017-rtm\">Download RTM</a> then <a href=\"https://support.microsoft.com/en-us/help/5016884\">CU31</a> then <a href=\"https://support.microsoft.com/en-us/help/5128496\">GDR</a>",
         "build": "14.0.3560.2",
         "support_ends": "2027/10/12",
         "other_updates": "<a href=\"https://sqlserverupdates.com/sql-server-2017-updates/\">Other SQL 2017 Updates</a>"
