@@ -27,6 +27,8 @@ import json
 import os
 import re
 import sys
+import time
+import urllib.error
 import urllib.request
 from urllib.parse import urljoin
 import xml.etree.ElementTree as ET
@@ -410,6 +412,80 @@ def fetch_first_ok(urls):
             print(f"    kb fetch failed ({u}): {e}")
     return None, None
 
+class OpenAIRequestError(RuntimeError):
+    """Safe API diagnostics; never include response messages or credentials."""
+
+
+def openai_request(api_key, payload):
+    req = urllib.request.Request(
+        OPENAI_URL, data=json.dumps(payload).encode(),
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"})
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=90) as resp:
+                return json.loads(resp.read())
+        except urllib.error.HTTPError as exc:
+            try:
+                error = json.loads(exc.read()).get("error", {})
+                if not isinstance(error, dict):
+                    error = {}
+            except (ValueError, AttributeError):
+                error = {}
+            finally:
+                exc.close()
+            # Only print bounded identifiers, never the free-form API message
+            # (authentication errors can echo part of the API key).
+            def identifier(value):
+                value = str(value or "unknown")
+                if api_key:
+                    value = value.replace(api_key, "redacted")
+                return re.sub(r"[^a-zA-Z0-9_.-]", "_", value)[:100]
+            code = identifier(error.get("code"))
+            kind = identifier(error.get("type"))
+            quota = kind == "insufficient_quota" or code in {
+                "insufficient_quota", "credit_balance_exhausted",
+                "organization_spend_limit_exceeded", "project_spend_limit_exceeded",
+                "organization_usage_limit_exceeded",
+            }
+            detail = (f"OpenAI HTTP {exc.code}; model={OPENAI_MODEL}; "
+                      f"code={code}; type={kind}; "
+                      f"request_id={identifier(exc.headers.get('x-request-id'))}")
+            if exc.code == 429 and not quota and attempt < 2:
+                delay = 2 ** (attempt + 1)
+                try:
+                    delay = max(delay, float(exc.headers.get("Retry-After", delay)))
+                except ValueError:
+                    pass
+                if delay <= 60:
+                    print(f"{detail}; retrying in {delay:g}s")
+                    time.sleep(delay)
+                    continue
+            if quota:
+                detail += "; credits or account limits must be corrected; retries cannot fix this"
+            elif exc.code == 429:
+                detail += "; rate limit persists after bounded retries"
+            raise OpenAIRequestError(detail) from None
+
+
+def diagnose_api():
+    """Test the workflow's exact model/key without fetching or writing site data."""
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        print("ERROR: OPENAI_API_KEY not set", file=sys.stderr)
+        return 1
+    try:
+        openai_request(api_key, {
+            "model": OPENAI_MODEL, "temperature": 0, "max_tokens": 8,
+            "response_format": {"type": "json_object"},
+            "messages": [{"role": "user", "content": 'Reply with JSON: {"ok":true}'}],
+        })
+    except OpenAIRequestError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    print(f"OpenAI diagnostic succeeded: model={OPENAI_MODEL}; API access is working")
+    return 0
+
+
 def llm_extract(api_key, title, rss_date, desc_text, kb_url, kb_text, candidate_links):
     system = (
         "You extract SQL Server release details. Respond ONLY with a JSON object: "
@@ -436,11 +512,7 @@ def llm_extract(api_key, title, rss_date, desc_text, kb_url, kb_text, candidate_
         "messages": [{"role": "system", "content": system},
                      {"role": "user", "content": user}],
     }
-    req = urllib.request.Request(
-        OPENAI_URL, data=json.dumps(payload).encode(),
-        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=90) as resp:
-        data = json.loads(resp.read())
+    data = openai_request(api_key, payload)
     return json.loads(data["choices"][0]["message"]["content"])
 
 
@@ -683,5 +755,7 @@ def selftest():
 if __name__ == "__main__":
     if "--selftest" in sys.argv:
         selftest()
+    elif "--diagnose-api" in sys.argv:
+        sys.exit(diagnose_api())
     else:
         run()
