@@ -5,11 +5,68 @@ import io
 import json
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest.mock import patch
 
 import build
 import poll_feed as poll
+
+
+class OpenAIRequestTests(unittest.TestCase):
+    def api_error(self, code, kind="insufficient_quota", retry_after=None):
+        headers = {"x-request-id": "req-test"}
+        if retry_after is not None:
+            headers["Retry-After"] = retry_after
+        return urllib.error.HTTPError(poll.OPENAI_URL, 429, "Too Many Requests",
+            headers, io.BytesIO(json.dumps({"error": {
+                "code": code, "type": kind, "message": "secret-test-key"
+            }}).encode()))
+
+    def test_quota_error_is_specific_redacted_and_never_retried(self):
+        for code in ("insufficient_quota", "credit_balance_exhausted",
+                     "project_spend_limit_exceeded", "organization_spend_limit_exceeded",
+                     "organization_usage_limit_exceeded"):
+            with self.subTest(code=code), \
+                    patch.object(poll.urllib.request, "urlopen",
+                                 side_effect=self.api_error(code)) as request, \
+                    patch.object(poll.time, "sleep") as sleep:
+                with self.assertRaises(poll.OpenAIRequestError) as caught:
+                    poll.openai_request("secret-test-key", {})
+                message = str(caught.exception)
+                self.assertIn(f"code={code}", message)
+                self.assertIn("request_id=req-test", message)
+                self.assertNotIn("secret-test-key", message)
+                self.assertEqual(request.call_count, 1)
+                sleep.assert_not_called()
+
+    def test_temporary_rate_limit_retries_and_recovers(self):
+        response = io.BytesIO(b'{"choices": []}')
+        with patch.object(poll.urllib.request, "urlopen", side_effect=[
+                self.api_error("rate_limit_exceeded", "requests", "5"), response]) as request, \
+                patch.object(poll.time, "sleep") as sleep, \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(poll.openai_request("secret-test-key", {}), {"choices": []})
+            self.assertEqual(request.call_count, 2)
+            sleep.assert_called_once_with(5)
+
+    def test_retries_are_bounded(self):
+        errors = [self.api_error("rate_limit_exceeded", "requests") for _ in range(3)]
+        with patch.object(poll.urllib.request, "urlopen", side_effect=errors) as request, \
+                patch.object(poll.time, "sleep") as sleep, \
+                contextlib.redirect_stdout(io.StringIO()):
+            with self.assertRaisesRegex(poll.OpenAIRequestError, "rate limit persists"):
+                poll.openai_request("secret-test-key", {})
+            self.assertEqual(request.call_count, 3)
+            self.assertEqual(sleep.call_count, 2)
+
+    def test_non_json_error_still_reports_status(self):
+        error = urllib.error.HTTPError(poll.OPENAI_URL, 403, "Forbidden", {},
+                                      io.BytesIO(b'not JSON: secret-test-key'))
+        with patch.object(poll.urllib.request, "urlopen", side_effect=error):
+            with self.assertRaisesRegex(poll.OpenAIRequestError, "OpenAI HTTP 403") as caught:
+                poll.openai_request("secret-test-key", {})
+            self.assertNotIn("secret-test-key", str(caught.exception))
 
 
 class ReleaseTests(unittest.TestCase):
