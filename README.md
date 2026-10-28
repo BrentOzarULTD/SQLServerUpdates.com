@@ -67,6 +67,29 @@ email and GitHub inbox delivery are controlled in account notification settings.
 Requires an
 `OPENAI_API_KEY` repository secret.
 
+### Troubleshooting OpenAI failures
+
+In GitHub Actions, select **Poll Microsoft sources for new builds**, then
+**Run workflow** and enable **Test OpenAI access without changing site data**.
+This sends a small request using the same secret and model as the poller,
+without fetching releases, editing data, or opening a pull request. The log
+reports the HTTP status, API error code/type, and request ID, without exposing
+the key or the API's free-form error message.
+
+- `credit_balance_exhausted`: add prepaid API credits in the key's OpenAI
+  organization's [billing settings](https://platform.openai.com/settings/organization/billing).
+- `project_spend_limit_exceeded` or `organization_spend_limit_exceeded`: review
+  the corresponding project's or organization's spending limit.
+- `organization_usage_limit_exceeded`: request a higher approved usage limit.
+- `rate_limit_exceeded` or `slow_down`: temporary throttling; the poller retries
+  twice, honoring numeric `Retry-After` values up to 60 seconds. Quota and
+  billing errors are not retried.
+
+After correcting the reported account condition, run the diagnostic again.
+Once it succeeds, run the workflow with the diagnostic option disabled to
+resume release detection. Local diagnosis is also available via
+`python3 poll_feed.py --diagnose-api` when `OPENAI_API_KEY` is set.
+
 Version tables display numeric build numbers in descending order. Homepage
 installation instructions keep the CU and its GDR as separate download links,
 and Microsoft Support's relative KB links resolve on the Support domain.
